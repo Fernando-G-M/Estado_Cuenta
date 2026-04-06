@@ -3,10 +3,13 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Image, Spacer
+from reportlab.platypus import (
+    SimpleDocTemplate, Table, TableStyle, Paragraph,
+    Image, Spacer, KeepTogether
+)
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 from datetime import datetime
 
@@ -49,45 +52,30 @@ def color_retiro(val):
     return "color: red" if val > 0 else ""
 
 # -------------------------------
-# PDF NIVEL BANCO REAL
+# PDF
 # -------------------------------
 def generar_pdf(df, fecha, total_dep, total_ret, saldo_final):
     doc = SimpleDocTemplate("estado_cuenta.pdf", pagesize=letter)
     elementos = []
     styles = getSampleStyleSheet()
 
-    subtitulo = ParagraphStyle(name="Subtitulo", fontSize=9, textColor=colors.grey)
-
     # HEADER
     try:
         barra = Table([[""]], colWidths=[6.5*inch])
         barra.setStyle([
             ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#003366")),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 6),
         ])
         elementos.append(barra)
 
         logo = Image("logo.png", width=130, height=80)
 
         info_header = Paragraph(
-            "<b><font size=14 color='#003366'>Estados de cuenta</font></b><br/>",
+            "<b><font size=14 color='#003366'>Informacion del estado de cuenta</font></b>",
             styles["Normal"]
         )
 
         header = Table([[logo, info_header]], colWidths=[2*inch, 4.5*inch])
-
-        header.setStyle([
-            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-            ("LEFTPADDING", (0,0), (-1,-1), 10),
-        ])
-
         elementos.append(header)
-
-        linea = Table([[""]], colWidths=[6.5*inch])
-        linea.setStyle([
-            ("LINEBELOW", (0,0), (-1,-1), 1, colors.HexColor("#003366")),
-        ])
-        elementos.append(linea)
 
     except:
         elementos.append(Paragraph("ESTADO DE CUENTA", styles["Title"]))
@@ -95,44 +83,39 @@ def generar_pdf(df, fecha, total_dep, total_ret, saldo_final):
     elementos.append(Spacer(1, 12))
 
     # INFO
-    folio = f"EC-{datetime.now().strftime('%Y%m%d%H%M')}"
     fecha_actual = datetime.now().strftime("%d/%m/%Y")
 
     info = Table([
         ["Propietario:", "Luis Pascual Martinez Ochoa"],
         ["Fecha emisión:", fecha_actual],
-        ["Fecha corte:", str(fecha), "", ""]
-    ], colWidths=[1.5*inch, 2.5*inch, 1.5*inch, 1.5*inch])
-
-    info.setStyle([
-        ("FONTSIZE", (0,0), (-1,-1), 9),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ["Fecha corte:", fecha.strftime("%d/%m/%Y")]
     ])
 
     elementos.append(info)
-
     elementos.append(Spacer(1, 15))
 
     # RESUMEN
     resumen = Table([
         ["Depósitos", "Retiros", "Saldo"],
         [f"${total_dep:,.2f}", f"${total_ret:,.2f}", f"${saldo_final:,.2f}"]
-    ], colWidths=[2*inch, 2*inch, 2*inch])
+    ])
 
     resumen.setStyle([
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#003366")),
         ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-        ("BACKGROUND", (0,1), (-1,1), colors.HexColor("#eaf2f8")),
         ("ALIGN", (0,0), (-1,-1), "CENTER"),
-        ("BOX", (0,0), (-1,-1), 1, colors.black),
+        ("GRID", (0,0), (-1,-1), 1, colors.black),
     ])
 
     elementos.append(resumen)
-
     elementos.append(Spacer(1, 20))
 
-    # TABLA
-    data = [df.columns.tolist()] + df.values.tolist()
+    # FORMATO PARA PDF
+    df_pdf = df.copy()
+    for col in ["DEPÓSITO", "RETIRO", "SALDO"]:
+        df_pdf[col] = df_pdf[col].apply(lambda x: f"{x:,.2f}")
+
+    data = [df_pdf.columns.tolist()] + df_pdf.values.tolist()
 
     tabla = Table(data, repeatRows=1)
 
@@ -140,16 +123,59 @@ def generar_pdf(df, fecha, total_dep, total_ret, saldo_final):
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#003366")),
         ("TEXTCOLOR", (0,0), (-1,0), colors.white),
         ("ALIGN", (0,0), (-1,0), "CENTER"),
-        ("GRID", (0,0), (-1,-1), 0.25, colors.grey),
         ("ALIGN", (2,1), (-1,-1), "RIGHT"),
+        ("GRID", (0,0), (-1,-1), 0.25, colors.grey),
         ("ROWBACKGROUNDS", (0,1), (-1,-1),
          [colors.white, colors.HexColor("#f4f6f7")]),
+        ("FONTSIZE", (0,0), (-1,-1), 8),
     ])
 
     elementos.append(tabla)
+    elementos.append(Spacer(1, 15))
 
-    elementos.append(Spacer(1, 20))
+    # -------------------------------
+    # OBSERVACIONES (INTELIGENTE)
+    # -------------------------------
+    titulo_obs = Paragraph(
+        "<b>Observaciones de transferencia</b>",
+        styles["Heading3"]
+    )
 
+    data_obs = [["Fecha", "Descripción", "Depósitos", "Observaciones"]]
+
+    for _ in range(10):
+        data_obs.append([
+            fecha.strftime("%d/%m/%Y"),
+            "",
+            "",
+            ""
+        ])
+
+    tabla_obs = Table(
+        data_obs,
+        colWidths=[1.2*inch, 2.5*inch, 1.2*inch, 1.6*inch],
+        repeatRows=1
+    )
+
+    tabla_obs.setStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#003366")),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+        ("ALIGN", (0,0), (-1,0), "CENTER"),
+        ("ALIGN", (2,1), (2,-1), "RIGHT"),
+        ("GRID", (0,0), (-1,-1), 0.25, colors.grey),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1),
+         [colors.white, colors.HexColor("#f9f9f9")]),
+        ("FONTSIZE", (0,0), (-1,-1), 8),
+    ])
+
+    bloque_obs = [
+        titulo_obs,
+        Spacer(1, 10),
+        tabla_obs
+    ]
+
+    # 👇 CLAVE: usa espacio restante inteligentemente
+    elementos.append(KeepTogether(bloque_obs))
 
     doc.build(elementos)
 
@@ -165,7 +191,6 @@ if archivo is not None:
 
     df["FECHA_OK"] = df.iloc[:, 0].apply(convertir_fecha)
     df = df[df["FECHA_OK"].notna()]
-    df["FECHA_OK"] = pd.to_datetime(df["FECHA_OK"])
 
     df_filtrado = df[df["FECHA_OK"].dt.date == fecha_seleccionada].copy()
 
@@ -186,7 +211,6 @@ if archivo is not None:
 
             total_dep += dep
             total_ret += ret
-
             saldo += (dep - ret)
 
             resultado.append({
@@ -206,7 +230,7 @@ if archivo is not None:
         c2.metric("Retiros", f"${total_ret:,.2f}")
         c3.metric("Saldo", f"${saldo:,.2f}")
 
-        # TABLA
+        # TABLA CON COLORES
         styled = df_resultado.style \
             .applymap(color_deposito, subset=["DEPÓSITO"]) \
             .applymap(color_retiro, subset=["RETIRO"]) \
@@ -218,7 +242,7 @@ if archivo is not None:
 
         st.dataframe(styled, hide_index=True, use_container_width=True)
 
-        # GENERAR ARCHIVOS AUTOMÁTICOS
+        # GENERAR ARCHIVOS
         generar_pdf(df_resultado, fecha_seleccionada, total_dep, total_ret, saldo)
 
         wb = Workbook()
@@ -229,7 +253,6 @@ if archivo is not None:
 
         wb.save("estado.xlsx")
 
-        # BOTONES DIRECTOS
         col1, col2 = st.columns(2)
 
         with open("estado.xlsx", "rb") as f:
