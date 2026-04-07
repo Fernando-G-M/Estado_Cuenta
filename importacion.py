@@ -232,8 +232,8 @@ if archivo is not None:
 
         # TABLA CON COLORES
         styled = df_resultado.style \
-            .applymap(color_deposito, subset=["DEPÓSITO"]) \
-            .applymap(color_retiro, subset=["RETIRO"]) \
+            .map(color_deposito, subset=["DEPÓSITO"]) \
+            .map(color_retiro, subset=["RETIRO"]) \
             .format({
                 "DEPÓSITO": "${:,.2f}",
                 "RETIRO": "${:,.2f}",
