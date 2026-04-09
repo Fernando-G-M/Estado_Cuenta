@@ -55,6 +55,150 @@ def color_retiro(val):
 def es_pago_terceros(desc):
     return "pago a terceros" in str(desc).lower()
 
+def es_pago_interbancario(desc):
+    return "interbancario" in str(desc).lower()
+
+def es_alfanumerica(desc):
+    """
+    Filtra descripciones que son solo codigos sin palabras legibles.
+    Ejemplos a quitar: AUT 34878, 00194, AUT SER BCA ELEC 134878
+    Se considera alfanumerica si tiene menos de 2 palabras con 4+ letras seguidas.
+    """
+    import re
+    texto = str(desc).strip()
+    palabras_legibles = re.findall(r'[a-zA-ZáéíóúÁÉÍÓÚñÑ]{4,}', texto)
+    # Excluir siglas conocidas que no son palabras legibles
+    siglas = {"pago", "deposito", "retiro", "saldo", "aut", "ser", "bca", "elec", "ref"}
+    palabras_reales = [p for p in palabras_legibles if p.lower() not in siglas]
+    return len(palabras_reales) < 2
+
+def debe_filtrar(desc):
+    return (
+        es_pago_terceros(desc) or
+        es_pago_interbancario(desc) or
+        es_alfanumerica(desc)
+    )
+
+# -------------------------------
+# PDF SOLO OBSERVACIONES (sin movimientos)
+# -------------------------------
+def generar_pdf_vacio(fecha):
+    AZUL_OSCURO = colors.HexColor("#0D2B55")
+    AZUL_MEDIO  = colors.HexColor("#1A4A8A")
+    AZUL_CLARO  = colors.HexColor("#E8F0FB")
+    GRIS_LINEA  = colors.HexColor("#CBD5E1")
+    BLANCO      = colors.white
+
+    doc = SimpleDocTemplate(
+        "estado_cuenta.pdf",
+        pagesize=landscape(letter),
+        rightMargin=0.6*inch,
+        leftMargin=0.6*inch,
+        topMargin=0.5*inch,
+        bottomMargin=0.5*inch
+    )
+
+    elementos = []
+
+    estilo_label_w = ParagraphStyle("lw2", fontSize=7,  textColor=colors.HexColor("#A8C4E8"), fontName="Helvetica")
+    estilo_valor_w = ParagraphStyle("vw2", fontSize=10, textColor=BLANCO, fontName="Helvetica-Bold")
+    estilo_titulo  = ParagraphStyle("ti2", fontSize=18, textColor=BLANCO, fontName="Helvetica-Bold", leading=22)
+    estilo_sub     = ParagraphStyle("su2", fontSize=9,  textColor=colors.HexColor("#A8C4E8"), fontName="Helvetica")
+    estilo_seccion = ParagraphStyle("se2", fontSize=9,  textColor=AZUL_OSCURO, fontName="Helvetica-Bold", spaceBefore=4)
+
+    fecha_actual = datetime.now().strftime("%d/%m/%Y")
+
+    # HEADER
+    try:
+        logo_img = Image("logo.png", width=90, height=55)
+    except:
+        logo_img = Paragraph("<b><font color='white' size=12>EC</font></b>",
+                             ParagraphStyle("x2", textColor=BLANCO))
+
+    col_logo  = Table([[logo_img]], colWidths=[1.2*inch])
+    col_texto = Table([
+        [Paragraph("Estado de Cuenta", estilo_titulo)],
+        [Paragraph("Resumen de movimientos bancarios", estilo_sub)]
+    ], colWidths=[5*inch])
+
+    info_right = Table([
+        [Paragraph("Propietario",                estilo_label_w)],
+        [Paragraph("Luis Pascual Martinez Ochoa", estilo_valor_w)],
+        [Spacer(1, 4)],
+        [Paragraph("Fecha de emision",           estilo_label_w)],
+        [Paragraph(fecha_actual,                 estilo_valor_w)],
+        [Spacer(1, 4)],
+        [Paragraph("Fecha de corte",             estilo_label_w)],
+        [Paragraph(fecha.strftime("%d/%m/%Y"),   estilo_valor_w)],
+    ], colWidths=[2.5*inch])
+
+    header_inner = Table(
+        [[col_logo, col_texto, info_right]],
+        colWidths=[1.3*inch, 5.7*inch, 2.8*inch]
+    )
+    header_inner.setStyle([
+        ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
+        ("LEFTPADDING",  (0,0), (-1,-1), 8),
+        ("RIGHTPADDING", (0,0), (-1,-1), 8),
+    ])
+
+    header_outer = Table([[header_inner]], colWidths=[9.8*inch])
+    header_outer.setStyle([
+        ("BACKGROUND",    (0,0), (-1,-1), AZUL_OSCURO),
+        ("TOPPADDING",    (0,0), (-1,-1), 12),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 12),
+        ("LEFTPADDING",   (0,0), (-1,-1), 0),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 0),
+    ])
+
+    elementos.append(header_outer)
+    elementos.append(Spacer(1, 20))
+
+    # TABLA OBSERVACIONES
+    elementos.append(Paragraph("Observaciones de transferencia", estilo_seccion))
+    elementos.append(Spacer(1, 6))
+
+    enc_obs = [
+        Paragraph(c, ParagraphStyle("tho2", fontSize=8, textColor=BLANCO,
+                                    fontName="Helvetica-Bold", alignment=TA_CENTER))
+        for c in ["Fecha", "Descripcion", "Depositos", "Observaciones"]
+    ]
+
+    data_obs = [enc_obs]
+    for _ in range(15):
+        data_obs.append([fecha.strftime("%d/%m/%Y"), "", "", ""])
+
+    obs_row_colors = []
+    for i in range(1, len(data_obs)):
+        bg = BLANCO if i % 2 == 0 else AZUL_CLARO
+        obs_row_colors.append(("BACKGROUND", (0, i), (-1, i), bg))
+
+    tabla_obs = Table(
+        data_obs,
+        colWidths=[1*inch, 4*inch, 1*inch, 3.5*inch],
+        repeatRows=1
+    )
+    tabla_obs.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0),  (-1,0),  AZUL_OSCURO),
+        ("TEXTCOLOR",     (0,0),  (-1,0),  BLANCO),
+        ("ALIGN",         (0,0),  (-1,0),  "CENTER"),
+        ("ALIGN",         (2,1),  (2,-1),  "RIGHT"),
+        ("FONTNAME",      (0,0),  (-1,0),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0),  (-1,-1), 8),
+        ("ROWHEIGHT",     (0,0),  (-1,-1), 16),
+        ("GRID",          (0,0),  (-1,-1), 0.5, GRIS_LINEA),
+        ("LINEBELOW",     (0,0),  (-1,0),  1.5, AZUL_MEDIO),
+        ("LEFTPADDING",   (0,0),  (-1,-1), 6),
+        ("RIGHTPADDING",  (0,0),  (-1,-1), 6),
+        ("TOPPADDING",    (0,0),  (-1,-1), 3),
+        ("BOTTOMPADDING", (0,0),  (-1,-1), 3),
+        ("VALIGN",        (0,0),  (-1,-1), "MIDDLE"),
+        ("BOX",           (0,0),  (-1,-1), 1, colors.HexColor("#0D2B55")),
+    ] + obs_row_colors))
+
+    elementos.append(KeepTogether([tabla_obs]))
+    doc.build(elementos)
+
 # -------------------------------
 # PDF HORIZONTAL MEJORADO
 # -------------------------------
@@ -151,9 +295,8 @@ def generar_pdf(df, fecha, total_dep, total_ret, saldo_final):
 
     resumen_row = Table([[
         tarjeta("DEPOSITOS",  f"${total_dep:,.2f}",    VERDE),
-        tarjeta("RETIROS",    f"${total_ret:,.2f}",    ROJO),
-        tarjeta("SALDO",      f"${saldo_final:,.2f}",  AZUL_MEDIO),
-    ]], colWidths=[3.26*inch, 3.26*inch, 3.26*inch])
+        tarjeta("COBROS POR TERMINAL", f"${total_ret:,.2f}", ROJO),
+    ]], colWidths=[4.9*inch, 4.9*inch])
     resumen_row.setStyle([
         ("LEFTPADDING",  (0,0), (-1,-1), 3),
         ("RIGHTPADDING", (0,0), (-1,-1), 3),
@@ -167,7 +310,7 @@ def generar_pdf(df, fecha, total_dep, total_ret, saldo_final):
     elementos.append(Spacer(1, 5))
 
     df_pdf = df.copy()
-    for col in ["DEPÓSITO", "RETIRO", "SALDO"]:
+    for col in ["DEPÓSITO", "COBROS POR TERMINAL"]:
         df_pdf[col] = df_pdf[col].apply(lambda x: f"${x:,.2f}")
 
     encabezados = [
@@ -185,7 +328,7 @@ def generar_pdf(df, fecha, total_dep, total_ret, saldo_final):
 
     tabla = Table(
         data,
-        colWidths=[1*inch, 2.9*inch, 0.8*inch, 0.8*inch, 0.8*inch, 2.9*inch],
+        colWidths=[1.2*inch, 3.5*inch, 1.4*inch, 1.4*inch, 2.3*inch],
         repeatRows=1
     )
     tabla.setStyle(TableStyle([
@@ -223,7 +366,7 @@ def generar_pdf(df, fecha, total_dep, total_ret, saldo_final):
     ]
 
     data_obs = [enc_obs]
-    for _ in range(10):
+    for _ in range(8):
         data_obs.append([fecha.strftime("%d/%m/%Y"), "", "", ""])
 
     obs_row_colors = []
@@ -274,11 +417,14 @@ if archivo is not None:
 
     # FILTRAR PAGO A TERCEROS
     df_filtrado = df_filtrado[
-        ~df_filtrado["Descripción"].apply(es_pago_terceros)
+        ~df_filtrado["Descripción"].apply(debe_filtrar)
     ].copy()
 
     if df_filtrado.empty:
-        st.warning("No hay datos para esa fecha")
+        st.info("No hay movimientos para esta fecha. Se generará el PDF solo con la tabla de observaciones.")
+        generar_pdf_vacio(fecha_seleccionada)
+        with open("estado_cuenta.pdf", "rb") as f:
+            st.download_button("📥 Descargar PDF de Observaciones", f, file_name="estado_cuenta.pdf")
     else:
         resultado = []
         saldo = 0
@@ -300,28 +446,25 @@ if archivo is not None:
                 "FECHA": fecha.strftime("%d/%m/%Y"),
                 "DESCRIPCIÓN": str(desc)[:40] + "..." if len(str(desc)) > 40 else str(desc),
                 "DEPÓSITO": dep,
-                "RETIRO": ret,
-                "SALDO": saldo
+                "COBROS POR TERMINAL": ret
             })
 
         df_resultado = pd.DataFrame(resultado)
 
         # RESUMEN
         st.subheader("Resumen")
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         c1.metric("Depósitos", f"${total_dep:,.2f}")
-        c2.metric("Retiros",   f"${total_ret:,.2f}")
-        c3.metric("Saldo",     f"${saldo:,.2f}")
+        c2.metric("Cobros por Terminal", f"${total_ret:,.2f}")
 
         # TABLA CON COLORES
         st.subheader("Detalle de movimientos")
         styled = df_resultado.style \
             .map(color_deposito, subset=["DEPÓSITO"]) \
-            .map(color_retiro,   subset=["RETIRO"]) \
+            .map(color_retiro,   subset=["COBROS POR TERMINAL"]) \
             .format({
                 "DEPÓSITO": "${:,.2f}",
-                "RETIRO":   "${:,.2f}",
-                "SALDO":    "${:,.2f}"
+                "COBROS POR TERMINAL": "${:,.2f}"
             })
         st.dataframe(styled, hide_index=True, use_container_width=True)
 
