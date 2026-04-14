@@ -56,19 +56,26 @@ def es_pago_terceros(desc):
     return "pago a terceros" in str(desc).lower()
 
 def es_pago_interbancario(desc):
-    return "interbancario" in str(desc).lower()
+    texto = str(desc).lower()
+    # Solo filtra pagos interbancarios puros, NO depósitos interbancarios
+    return "interbancario" in texto and "deposito" not in texto and "depósito" not in texto
 
 def es_alfanumerica(desc):
     """
     Filtra descripciones que son solo codigos sin palabras legibles.
     Ejemplos a quitar: AUT 34878, 00194, AUT SER BCA ELEC 134878
-    Se considera alfanumerica si tiene menos de 2 palabras con 4+ letras seguidas.
+    Excepciones: descripciones con COBRO, DEPOSITO, VENTAS aunque tengan código numérico.
     """
     import re
-    texto = str(desc).strip()
+    texto = str(desc).lower().strip()
+
+    # Si contiene palabras clave de negocio, NO filtrar
+    palabras_clave = ["cobro", "deposito", "depósito", "ventas", "netas", "comis", "tarj", "debit", "terminal"]
+    if any(p in texto for p in palabras_clave):
+        return False
+
     palabras_legibles = re.findall(r'[a-zA-ZáéíóúÁÉÍÓÚñÑ]{4,}', texto)
-    # Excluir siglas conocidas que no son palabras legibles
-    siglas = {"pago", "deposito", "retiro", "saldo", "aut", "ser", "bca", "elec", "ref"}
+    siglas = {"pago", "aut", "ser", "bca", "elec", "ref", "inst", "nom"}
     palabras_reales = [p for p in palabras_legibles if p.lower() not in siglas]
     return len(palabras_reales) < 2
 
